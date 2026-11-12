@@ -66,7 +66,9 @@ $browse=New-Object Windows.Forms.Button;$browse.Text='Dosya sec';$browse.Dock='F
 Add-TempoLabel 'Siralama duzeni (collation)' 2
 $collation=New-Object Windows.Forms.ComboBox;$collation.DropDownStyle='DropDownList';$collation.Dock='Fill';$collation.Items.AddRange(@('Turkish_CI_AS','SQL_Latin1_General_CP1254_CI_AS','Latin1_General_CI_AS','SQL_Latin1_General_CP1_CI_AS'));$settings.Controls.Add($collation,1,2)
 Add-TempoLabel 'Kimlik dogrulama' 3
-$auth=New-Object Windows.Forms.Label;$auth.Text='Windows hesabi (raporu calistiran hesap yonetici olur)';$auth.Dock='Fill';$settings.Controls.Add($auth,1,3)
+$auth=New-Object Windows.Forms.ComboBox;$auth.DropDownStyle='DropDownList';$auth.Items.AddRange(@('Windows','Windows + SQL (karma)'));$auth.SelectedIndex=0;$auth.Dock='Fill';$settings.Controls.Add($auth,1,3)
+$password=New-Object Windows.Forms.TextBox;$password.UseSystemPasswordChar=$true;$password.Enabled=$false;$password.Dock='Fill';$settings.Controls.Add($password,2,3)
+$auth.Add_SelectedIndexChanged({$password.Enabled=$auth.SelectedIndex -eq 1;if(!$password.Enabled){$password.Clear()}})
 $license=New-Object Windows.Forms.CheckBox;$license.Text='Kurulum medyasindaki Microsoft SQL Server lisans kosullarini kabul ediyorum.';$license.Dock='Fill';$settings.Controls.Add($license,1,4);$settings.SetColumnSpan($license,2)
 $install=New-Object Windows.Forms.Button;$install.Text='Onayla ve yeni instance kur';$install.Dock='Fill';$install.Enabled=$false;$settings.Controls.Add($install,1,5)
 $download=New-Object Windows.Forms.Button;$download.Text='Resmi indirme';$download.Dock='Fill';$settings.Controls.Add($download,2,5)
@@ -117,9 +119,12 @@ $install.Add_Click({
   $signature=Get-AuthenticodeSignature -LiteralPath $media.Text
   if($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation'){throw 'Gecerli Microsoft imzasi bulunamadi. Kurulum durduruldu.'}
   if((Get-Item -LiteralPath $media.Text).VersionInfo.ProductVersion -notmatch '^15\.'){throw 'SQL Server 2019 (15.x) medyasi gerekli.'}
+  $mixed=$auth.SelectedIndex -eq 1
+  if($mixed -and ($password.Text.Length -lt 12 -or $password.Text -match '["\\
+]' -or $password.Text -notmatch '[A-Z]' -or $password.Text -notmatch '[a-z]' -or $password.Text -notmatch '[0-9]' -or $password.Text -notmatch '[^A-Za-z0-9]')){throw 'Karma mod icin en az 12 karakter, buyuk/kucuk harf, rakam ve sembol iceren sa parolasi yazin. Cift tirnak, ters bolu ve yeni satir kullanmayin.'}
   $account=[Security.Principal.WindowsIdentity]::GetCurrent().Name
   if($account -match '["\r\n]' -or $account -match '^NT AUTHORITY\\'){throw 'Yonetici yetkili gercek Windows kullanici hesabiyla calistirin; servis hesabi kabul edilmez.'}
-  $answer=[Windows.Forms.MessageBox]::Show("Hedef: $env:COMPUTERNAME`nYeni instance: $name`nSQL 2019 Express`nWindows yoneticisi: $account`nCollation: $($collation.SelectedItem)`nTCP ve Named Pipes: kapali (yerel demo)`n`nSessiz kurulumu baslatmak istiyor musunuz?",'SQL kurulumu onayi','YesNo','Warning')
+  $answer=[Windows.Forms.MessageBox]::Show("Hedef: $env:COMPUTERNAME`nYeni instance: $name`nSQL 2019 Express`nWindows yoneticisi: $account`nKimlik dogrulama: $($auth.SelectedItem)`nCollation: $($collation.SelectedItem)`nTCP ve Named Pipes: kapali (yerel demo)`n`nSessiz kurulumu baslatmak istiyor musunuz?",'SQL kurulumu onayi','YesNo','Warning')
   if($answer -ne 'Yes'){return}
   $install.Enabled=$false;$check.Enabled=$false;$form.UseWaitCursor=$true;$report.AppendText("`r`nSQL kurulumu hazirlaniyor. Islem bitene kadar paneli kapatmayin.`r`n");$form.Refresh()
   $dir=Join-Path $env:LOCALAPPDATA ('TempoDestek\Demo\SQL2019-'+[Guid]::NewGuid().ToString('N'))
@@ -133,7 +138,9 @@ $install.Add_Click({
   # Re-check immediately before setup; the operator report can be stale.
   if(@(Get-TempoSqlInstances | ForEach-Object {$_.Name}) -contains $name){throw 'Instance adi bu sirada kullanima alindi. Kurulum baslatilmadi.'}
   $args=@('/Q','/ACTION=Install','/FEATURES=SQLENGINE',('/INSTANCENAME='+$name),('/INSTANCEID='+$name),('/SQLSYSADMINACCOUNTS="'+$account+'"'),('/SQLCOLLATION='+$collation.SelectedItem),'/SQLSVCSTARTUPTYPE=Automatic','/TCPENABLED=0','/NPENABLED=0','/IACCEPTSQLSERVERLICENSETERMS')
+  if($mixed){$args+=@('/SECURITYMODE=SQL',('/SAPWD="'+$password.Text+'"'))}
   $process=Start-Process -FilePath $setup -ArgumentList $args -PassThru
+  $password.Clear()
   $script:sqlLog=Join-Path $env:ProgramFiles 'Microsoft SQL Server\150\Setup Bootstrap\Log\Summary.txt'
   $script:sqlProcess=$process;$script:sqlName=$name;$settings.Enabled=$false;$form.UseWaitCursor=$false
   $report.AppendText("`r`nSQL kurulumu calisiyor: $name`r`nLog: $script:sqlLog`r`n")

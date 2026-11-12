@@ -8,6 +8,9 @@ import '../../models/model.dart';
 import '../../models/terminal_model.dart';
 import '../../models/terminal_mouse_handler.dart';
 import 'catalog.dart';
+import 'tools_catalog.dart';
+import 'tools_dialog.dart';
+import 'package:flutter/services.dart';
 
 class TempoLibraryButton extends StatelessWidget {
   const TempoLibraryButton(
@@ -313,6 +316,43 @@ class _LibraryDialogState extends State<_LibraryDialog> {
     }
   }
 
+  Future<void> _runTool(String command, String title) async {
+    await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _DownloadTerminal(
+            peerId: widget.peerId,
+            command: command,
+            taskTitle: title,
+            sentStatus:
+                'Komut gönderildi. İşlem hedef bilgisayarda çalışır; sonucu kontrol edin.'));
+  }
+
+  Future<void> _demo() async {
+    try {
+      final ok = await showDialog<bool>(
+          context: context,
+          builder: (c) => AlertDialog(
+                  title: const Text('Demo Kurulumu'),
+                  content: const Text(
+                      'Hedef bilgisayarda kontrol paneli açılır. Bilgisayar, SQL instance/sürüm, SSMS ve dil/bölge bilgileri okunur. SQL 2019 Express kurulumu panelde ayrıca lisans ve kurulum onayı ister. Mevcut instance adları korunur; yeni ad seçilir. Yönetici yetkisi ve tam SQLEXPR kurulum medyası gerekir. Windows PowerShell komutları açık biçimde kullanılır.'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(c, false),
+                        child: const Text('Vazgeç')),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(c, true),
+                        child: const Text('Hedefte paneli aç'))
+                  ]));
+      if (ok != true || !mounted) return;
+      final script = await rootBundle.loadString('assets/tempo-demo.ps1');
+      if (mounted)
+        await _runTool(buildTempoDemoLaunch(script), 'Demo kurulumu');
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final shown = _records
@@ -330,7 +370,16 @@ class _LibraryDialogState extends State<_LibraryDialog> {
             return major != 0 ? major : compareTempoVersions(y[1], x[1]);
           });
     return AlertDialog(
-        title: Text('Tempo Kütüphanesi — ${widget.peerId}'),
+        title: Wrap(
+            spacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text('Tempo Kütüphanesi — ${widget.peerId}'),
+              TextButton(onPressed: _demo, child: const Text('Demo Kurulumu')),
+              TextButton(
+                  onPressed: () => showTempoTools(context, _runTool),
+                  child: const Text('E-Uygulamalar / Başlıklar'))
+            ]),
         content: SizedBox(
             width: 940,
             height: 580,
@@ -419,8 +468,13 @@ class _LibraryDialogState extends State<_LibraryDialog> {
 }
 
 class _DownloadTerminal extends StatefulWidget {
-  const _DownloadTerminal({required this.peerId, required this.command});
-  final String peerId, command;
+  const _DownloadTerminal(
+      {required this.peerId,
+      required this.command,
+      this.taskTitle = 'Mikro indirme',
+      this.sentStatus =
+          'Komut gönderildi. İndirme sonucu aşağıdaki terminalde görünür.'});
+  final String peerId, command, taskTitle, sentStatus;
   @override
   State<_DownloadTerminal> createState() => _DownloadTerminalState();
 }
@@ -470,9 +524,7 @@ class _DownloadTerminalState extends State<_DownloadTerminal> {
       if (!mounted || _ffi.closed || !_model.terminalOpened) return;
       try {
         await _model.sendVirtualKey('${widget.command}\r');
-        if (mounted)
-          setState(() => _status =
-              'Komut gönderildi. İndirme sonucu aşağıdaki terminalde görünür.');
+        if (mounted) setState(() => _status = widget.sentStatus);
       } catch (e) {
         if (mounted) setState(() => _status = 'Komut gönderilemedi: $e');
       }
@@ -485,7 +537,7 @@ class _DownloadTerminalState extends State<_DownloadTerminal> {
         builder: (c) => AlertDialog(
                 title: const Text('Terminal kapatılsın mı?'),
                 content: const Text(
-                    'İndirme sürüyorsa kesilebilir. Sonucu kontrol ederek kapatın.'),
+                    'İşlem sürüyorsa kesilebilir. Sonucu kontrol ederek kapatın.'),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(c, false),
@@ -513,7 +565,7 @@ class _DownloadTerminalState extends State<_DownloadTerminal> {
   Widget build(BuildContext context) => PopScope(
       canPop: false,
       child: AlertDialog(
-          title: Text('Mikro indirme — ${widget.peerId}'),
+          title: Text('${widget.taskTitle} — ${widget.peerId}'),
           content: SizedBox(
               width: 960,
               height: 540,

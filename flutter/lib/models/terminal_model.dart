@@ -44,6 +44,7 @@ TerminalClipboardWritePermission terminalClipboardWritePermission(
 }
 
 class TerminalModel with ChangeNotifier {
+  void Function(String)? onRemoteData;
   final String id; // peer id
   final FFI parent;
   final int terminalId;
@@ -511,6 +512,7 @@ class TerminalModel with ChangeNotifier {
         }
 
         _writeToTerminal(text, suppressTerminalOutput: suppressTerminalOutput);
+        onRemoteData?.call(text);
       } catch (e) {
         debugPrint('[TerminalModel] Failed to process terminal data: $e');
       }

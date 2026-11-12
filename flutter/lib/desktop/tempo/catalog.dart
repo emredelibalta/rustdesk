@@ -97,7 +97,10 @@ int compareTempoVersions(String a, String b) {
   return n != 0 ? n : x[2]!.toLowerCase().compareTo(y[2]!.toLowerCase());
 }
 
-String buildTempoDownloadCommand(List<TempoPackage> selected) {
+String buildTempoDownloadCommand(List<TempoPackage> selected, {String? jobId}) {
+  jobId ??= DateTime.now().microsecondsSinceEpoch.toString();
+  if (!RegExp(r'^[a-zA-Z0-9_-]{1,40}$').hasMatch(jobId))
+    throw const FormatException('Geçersiz indirme kimliği.');
   if (selected.isEmpty) throw const FormatException('Paket seçin.');
   final groups =
       selected.map((p) => '${p.product}|${p.major}|${p.version}').toSet();
@@ -113,7 +116,9 @@ String buildTempoDownloadCommand(List<TempoPackage> selected) {
             'url': p.url
           })
       .toList())));
-  final script = tempoDownloadScript.replaceAll('__MANIFEST__', manifest);
+  final script = tempoDownloadScript
+      .replaceAll('__MANIFEST__', manifest)
+      .replaceAll('__JOB_ID__', jobId);
   // Compact the script so even a cmd.exe fallback shell stays below its input limit.
   final compressed = base64Encode(gzip.encode(utf8.encode(script)));
   final bootstrap =
@@ -137,32 +142,55 @@ $ErrorActionPreference='Stop'
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
 $parsed=ConvertFrom-Json -InputObject ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__MANIFEST__')))
 $items=@($parsed)
-$root=[Environment]::GetFolderPath('LocalApplicationData')
-if([string]::IsNullOrWhiteSpace($root)){throw 'Kullanıcı klasörü bulunamadı.'}
+$root=[Environment]::GetFolderPath('Desktop')
+if([string]::IsNullOrWhiteSpace($root)){throw 'Masaüstü klasörü bulunamadı.'}
 Write-Host ('Hedef: '+$env:COMPUTERNAME+' / '+[Environment]::UserName)
-$failed=0
+$failed=0;$ordinal=0
+function Write-TempoProgress($index,$count,$received,$total,$phase){Write-Host ('TDP|__JOB_ID__|'+$index+'|'+$count+'|'+$received+'|'+$total+'|'+$phase+';')}
 foreach($r in $items){
+ $ordinal++
  if($r.product -notin @('Fly','Jump','Run','Müşavir') -or $r.major -notmatch '^V\d{1,3}$' -or $r.version -notmatch '^\d{1,4}[a-zA-Z]{0,2}$'){throw 'Geçersiz paket.'}
  $u=[Uri]$r.url
  if($u.Scheme -ne 'https' -or $u.UserInfo -ne ''){throw 'HTTPS gerekli.'}
  $name=[Uri]::UnescapeDataString([IO.Path]::GetFileName($u.AbsolutePath))
  if($name -notmatch '^[a-zA-Z0-9_. -]+\.(exe|msi)$'){throw 'Geçersiz dosya adı.'}
- $dir=Join-Path $root ('TempoDestek\Kurulumlar\Mikro\'+$r.product+'\'+$r.major+'\'+$r.version)
+ $dir=Join-Path $root ('MikroKurulum\'+$r.version+'\'+$r.product)
  New-Item -ItemType Directory -Force -Path $dir | Out-Null
  $log=Join-Path $dir 'indirme.log'
  $out=Join-Path $dir $name
- $part=Join-Path $dir ([guid]::NewGuid().ToString()+'.'+$name)
+ $working=Join-Path $dir ('.indirme-'+[guid]::NewGuid().ToString('N'))
+ New-Item -ItemType Directory -Force -Path $working | Out-Null
+ (Get-Item -LiteralPath $working).Attributes = (Get-Item -LiteralPath $working).Attributes -bor [IO.FileAttributes]::Hidden
+ $part=Join-Path $working $name
  $ok=$false
+ try{
  for($attempt=1;$attempt -le 3;$attempt++){
   try{
    Write-Host ('İndiriliyor: '+$name+' / Deneme '+$attempt)
-   Invoke-WebRequest -UseBasicParsing -Uri $r.url -OutFile $part -TimeoutSec 1800
+   $request=[Net.HttpWebRequest]::Create($r.url);$request.Timeout=30000;$request.ReadWriteTimeout=30000
+   $response=$null;$inputStream=$null;$outputStream=$null
+   try{
+    $response=$request.GetResponse()
+    if($response.ResponseUri.Scheme -ne 'https'){throw 'Indirme HTTPS disina yonlendirildi.'}
+    $total=[long]$response.ContentLength;$received=[long]0
+    Write-TempoProgress $ordinal $items.Count $received $total 'D'
+    $inputStream=$response.GetResponseStream();$outputStream=[IO.File]::Create($part)
+    $buffer=New-Object byte[] 65536;$last=[DateTime]::UtcNow;$started=$last
+    while(($read=$inputStream.Read($buffer,0,$buffer.Length)) -gt 0){
+     if(([DateTime]::UtcNow-$started).TotalSeconds -gt 1800){throw 'Indirme suresi asildi.'}
+     $outputStream.Write($buffer,0,$read);$received+=$read
+     if(([DateTime]::UtcNow-$last).TotalMilliseconds -ge 500){Write-TempoProgress $ordinal $items.Count $received $total 'D';$last=[DateTime]::UtcNow}
+    }
+    if($total -ge 0 -and $received -ne $total){throw 'Dosya boyutu eksik.'}
+   }finally{if($outputStream){$outputStream.Dispose()};if($inputStream){$inputStream.Dispose()};if($response){$response.Close()}}
+   Write-TempoProgress $ordinal $items.Count $received $total 'V' 
    $sig=Get-AuthenticodeSignature -LiteralPath $part
    if($sig.Status -ne 'Valid'){throw ('Dijital imza doğrulanamadı: '+$sig.Status)}
    $hash=(Get-FileHash -LiteralPath $part -Algorithm SHA256).Hash
    Move-Item -LiteralPath $part -Destination $out -Force
    ((Get-Date -Format s)+' | BAŞARILI | '+$name+' | '+$hash+' | '+$sig.SignerCertificate.Subject) | Add-Content -LiteralPath $log -Encoding UTF8
    Write-Host ('Tamamlandı: '+$out) -ForegroundColor Green
+   Write-TempoProgress $ordinal $items.Count $received $total 'C'
    $ok=$true;break
   }catch{
    ((Get-Date -Format s)+' | HATA | '+$name+' | '+$_.Exception.Message) | Add-Content -LiteralPath $log -Encoding UTF8
@@ -170,8 +198,10 @@ foreach($r in $items){
    Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue
   }
  }
- if(-not $ok){$failed++}
+ }finally{Remove-Item -LiteralPath $working -Recurse -Force -ErrorAction SilentlyContinue}
+ if(-not $ok){$failed++;Write-TempoProgress $ordinal $items.Count 0 0 'E'}
 }
+if($failed -eq 0){Write-TempoProgress 0 $items.Count 0 0 'A'}else{Write-TempoProgress 0 $items.Count 0 0 'F'}
 Write-Host ('İşlem bitti. Başarısız paket: '+$failed)
 Write-Host 'Kurulum başlatılmadı. Ayrıntılar indirme.log dosyasında.'
 ''';

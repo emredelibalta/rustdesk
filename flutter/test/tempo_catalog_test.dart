@@ -64,6 +64,11 @@ void main() {
     final ps = utf8.decode(gzip.decode(base64Decode(payload)));
     expect(ps, contains('Kurulum başlatılmadı'));
     expect(ps, contains('Get-AuthenticodeSignature'));
+    expect(ps, contains("GetFolderPath('Desktop')"));
+    expect(ps, contains("'MikroKurulum\\'+\$r.version+'\\'+\$r.product"));
+    expect(ps, contains("\$part=Join-Path \$working \$name"));
+    expect(ps, isNot(contains("ToString()+'.'+\$name")));
+    expect(ps, isNot(contains("GetFolderPath('LocalApplicationData')")));
     expect(ps, isNot(contains('Read-Host')));
     final manifest =
         RegExp("FromBase64String\\('([^']+)'\\)").firstMatch(ps)![1]!;

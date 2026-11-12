@@ -36,3 +36,11 @@ Additional changed files/runtime paths:
 - `tempo_tools_catalog_test.dart`: heading/link round trip, downloads without automatic installation, and script launch without encoded execution/policy bypass.
 
 Validation: Dart tests and PowerShell syntax/unique-instance helper tests pass. SQL installation, UAC, physical token readers, user-specific locale reporting and live Windows terminal/desktop integration still require isolated Windows acceptance testing. Previously reported portable customer ID and Mikro download percentage are not fixed by this operator-only change.
+
+## Download path and progress v0.8
+
+Mikro downloads now use the terminal account's redirected Desktop folder: `MikroKurulum/<version>/<product>/<original URL filename>`. Temporary downloads keep the original filename inside a hidden per-download working directory; GUIDs are not added to the final filename. The workspace is cleaned after each package. Existing completed files remain until the replacement has passed signature verification.
+
+The downloader streams actual received bytes and emits a compact per-job progress record. The native terminal model has one optional output observer; the original terminal rendering path remains in place before the observer runs. A new pure Dart decoder handles fragmented/ANSI-wrapped progress, ignores other job IDs and shows an indeterminate bar plus MB when the size is unknown. Download completion is separate from signature verification and from overall success/failure. No installer is started by Mikro downloads.
+
+Additional regression surface: `catalog.dart` changes the download directory, temporary filename placement and byte-stream reporting; `download_progress.dart` parses optional progress; `library_button.dart` displays per-file progress; `models/terminal_model.dart` adds the opt-in observer without changing FFI or native code. Tests cover the destination/original filename contract and fragmented/unknown-size/completion progress. The existing compressed command transport is unchanged; antivirus compatibility is not established by these changes.

@@ -8,6 +8,7 @@ import '../../models/model.dart';
 import '../../models/terminal_model.dart';
 import '../../models/terminal_mouse_handler.dart';
 import 'catalog.dart';
+import 'download_progress.dart';
 import 'tools_catalog.dart';
 import 'tools_dialog.dart';
 import 'package:flutter/services.dart';
@@ -285,7 +286,8 @@ class _LibraryDialogState extends State<_LibraryDialog> {
   Future<void> _download() async {
     try {
       final selected = _records.where((p) => _selected.contains(p.id)).toList();
-      final command = buildTempoDownloadCommand(selected);
+      final jobId = DateTime.now().microsecondsSinceEpoch.toString();
+      final command = buildTempoDownloadCommand(selected, jobId: jobId);
       final ok = await showDialog<bool>(
           context: context,
           builder: (c) => AlertDialog(
@@ -309,8 +311,11 @@ class _LibraryDialogState extends State<_LibraryDialog> {
       await showDialog<void>(
           context: context,
           barrierDismissible: false,
-          builder: (_) =>
-              _DownloadTerminal(peerId: widget.peerId, command: command));
+          builder: (_) => _DownloadTerminal(
+              peerId: widget.peerId,
+              command: command,
+              progressJobId: jobId,
+              progressLabels: selected.map((p) => p.label).toList()));
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     }
@@ -472,9 +477,13 @@ class _DownloadTerminal extends StatefulWidget {
       {required this.peerId,
       required this.command,
       this.taskTitle = 'Mikro indirme',
+      this.progressJobId,
+      this.progressLabels = const [],
       this.sentStatus =
           'Komut gönderildi. İndirme sonucu aşağıdaki terminalde görünür.'});
   final String peerId, command, taskTitle, sentStatus;
+  final String? progressJobId;
+  final List<String> progressLabels;
   @override
   State<_DownloadTerminal> createState() => _DownloadTerminalState();
 }
@@ -482,6 +491,8 @@ class _DownloadTerminal extends StatefulWidget {
 class _DownloadTerminalState extends State<_DownloadTerminal> {
   late final FFI _ffi;
   late final TerminalModel _model;
+  TempoProgressDecoder? _decoder;
+  TempoDownloadProgress? _progress;
   final _focus = FocusNode();
   Timer? _timeout;
   bool _sent = false, _expired = false;
@@ -494,6 +505,14 @@ class _DownloadTerminalState extends State<_DownloadTerminal> {
     _ffi.id = widget.peerId;
     _model = TerminalModel(_ffi, 0);
     _ffi.registerTerminalModel(0, _model);
+    if (widget.progressJobId != null) {
+      _decoder = TempoProgressDecoder(widget.progressJobId!);
+      _model.onRemoteData = (text) {
+        if (!mounted || _progress?.finished == true) return;
+        final progress = _decoder!.add(text);
+        if (progress != null) setState(() => _progress = progress);
+      };
+    }
     _model.addListener(_ready);
     _model.onClosed = () {
       if (mounted)
@@ -553,6 +572,7 @@ class _DownloadTerminalState extends State<_DownloadTerminal> {
   void dispose() {
     _timeout?.cancel();
     _model.removeListener(_ready);
+    _model.onRemoteData = null;
     _ffi.dialogManager.dismissAll();
     _ffi.close().catchError((Object e) {
       debugPrint('Tempo terminal close: $e');
@@ -573,6 +593,20 @@ class _DownloadTerminalState extends State<_DownloadTerminal> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(_status),
+                    if (_progress != null) ...[
+                      const SizedBox(height: 8),
+                      Text(_progress!.phase == 'A'
+                          ? 'Tüm indirmeler tamamlandı'
+                          : _progress!.phase == 'F'
+                              ? 'İndirme bitti; başarısız paket var. Terminal kaydını kontrol edin.'
+                              : 'Dosya ${_progress!.index}/${_progress!.count}: ${_progress!.index > 0 && _progress!.index <= widget.progressLabels.length ? widget.progressLabels[_progress!.index - 1] : ""}'),
+                      LinearProgressIndicator(value: _progress!.fraction),
+                      Text(_progress!.phase == 'V'
+                          ? 'Dosya indirildi, dijital imza doğrulanıyor…'
+                          : _progress!.phase == 'A'
+                              ? '%100'
+                              : '${_progress!.fraction == null ? "Boyut bilinmiyor" : "%${(_progress!.fraction! * 100).floor()}"} • ${(_progress!.received / 1048576).toStringAsFixed(1)} MB${_progress!.total > 0 ? " / ${(_progress!.total / 1048576).toStringAsFixed(1)} MB" : ""}'),
+                    ],
                     const SizedBox(height: 10),
                     Expanded(
                         child: TerminalMouseInteraction(_model.terminal,

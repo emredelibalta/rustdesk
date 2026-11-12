@@ -28,3 +28,6 @@ String peerCustomerLabel(Map<String, dynamic> additions) {
     return '';
   }
 }
+
+bool customerConnectionReady(bool requested, String id, int connectionStatus) =>
+    requested && id.trim().isNotEmpty && connectionStatus > 0;

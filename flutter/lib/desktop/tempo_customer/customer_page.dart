@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
@@ -6,6 +7,7 @@ import '../../models/platform_model.dart';
 import '../pages/desktop_setting_page.dart';
 import '../pages/desktop_tab_page.dart';
 import 'identity.dart';
+import 'lifecycle.dart';
 
 class TempoCustomerPage extends StatefulWidget {
   const TempoCustomerPage({super.key});
@@ -20,7 +22,9 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
   final _taxId = TextEditingController();
   final _person = TextEditingController();
   bool _ready = false, _busy = true;
-  String _error = '';
+  String _error = '', _deviceId = '';
+  Timer? _idTimer;
+  bool _readingId = false;
 
   @override
   void initState() {
@@ -28,6 +32,21 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
     _taxId.text = bind.mainGetLocalOption(key: 'tempo-tax-id');
     _person.text = bind.mainGetLocalOption(key: 'tempo-person');
     _prepare();
+    _refreshId();
+    _idTimer = Timer.periodic(const Duration(seconds: 1), (_) => _refreshId());
+  }
+
+  Future<void> _refreshId() async {
+    if (_readingId) return;
+    _readingId = true;
+    try {
+      final id = (await bind.mainGetMyId()).trim();
+      if (mounted && id != _deviceId) setState(() => _deviceId = id);
+    } catch (e) {
+      debugPrint('TempoDestek ID refresh: $e');
+    } finally {
+      _readingId = false;
+    }
   }
 
   Future<void> _prepare() async {
@@ -82,6 +101,7 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
 
   @override
   void dispose() {
+    _idTimer?.cancel();
     _taxId.dispose();
     _person.dispose();
     super.dispose();
@@ -118,7 +138,6 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
                         AnimatedBuilder(
                             animation: gFFI.serverModel,
                             builder: (context, _) {
-                              final model = gFFI.serverModel;
                               return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -126,16 +145,18 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
                                     Row(children: [
                                       Expanded(
                                           child: SelectableText(
-                                              model.serverId.text.isEmpty
-                                                  ? 'Hazırlanıyor…'
-                                                  : model.serverId.text,
+                                              _deviceId.isEmpty
+                                                  ? 'Kimlik oluşturuluyor…'
+                                                  : formatID(_deviceId),
                                               style: const TextStyle(
                                                   fontSize: 26))),
                                       IconButton(
                                           tooltip: 'Kimliği kopyala',
-                                          onPressed: () => Clipboard.setData(
-                                              ClipboardData(
-                                                  text: model.serverId.text)),
+                                          onPressed: _deviceId.isEmpty
+                                              ? null
+                                              : () => Clipboard.setData(
+                                                  ClipboardData(
+                                                      text: _deviceId)),
                                           icon: const Icon(Icons.copy))
                                     ]),
                                     const SizedBox(height: 10),
@@ -201,17 +222,29 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
                           AnimatedBuilder(
                               animation: gFFI.serverModel,
                               builder: (context, _) => Text(
-                                  gFFI.serverModel.connectStatus > 0
+                                  customerConnectionReady(_ready, _deviceId,
+                                          gFFI.serverModel.connectStatus)
                                       ? '● Destek bağlantısına hazır'
-                                      : '○ Sunucuya bağlanılıyor…',
-                                  style: const TextStyle(
-                                      color: Color(0xff198547)))),
+                                      : _deviceId.isEmpty
+                                          ? '○ Kimlik oluşturuluyor…'
+                                          : '○ Sunucuya bağlanılıyor…',
+                                  style: TextStyle(
+                                      color: customerConnectionReady(
+                                              _ready,
+                                              _deviceId,
+                                              gFFI.serverModel.connectStatus)
+                                          ? const Color(0xff198547)
+                                          : const Color(0xff8b6500)))),
                         if (_ready)
                           TextButton(
                               onPressed: _busy ? null : _stop,
                               child: const Text(
                                   'Hazır durumundan çık / bilgileri düzenle')),
                         const SizedBox(height: 16),
+                        OutlinedButton.icon(
+                            onPressed: closeTempoCustomer,
+                            icon: const Icon(Icons.power_settings_new),
+                            label: const Text('Desteği bitir ve kapat')),
                         const Text(
                             'Bağlantı isteğini yalnızca Tempo Bilişim personeliyle görüştüğünüzde onaylayın.',
                             style: TextStyle(
@@ -225,7 +258,7 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
                               onPressed: () => showAboutDialog(
                                       context: context,
                                       applicationName: 'TempoDestek',
-                                      applicationVersion: 'Test 0.5',
+                                      applicationVersion: 'Test 0.9',
                                       children: [
                                         const Text(
                                             'RustDesk altyapısı · AGPL-3.0\nKaynak: github.com/emredelibalta/rustdesk')

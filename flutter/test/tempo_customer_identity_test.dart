@@ -16,6 +16,13 @@ void main() {
     expect(() => customerIdentity('123', List.filled(81, 'A').join()),
         throwsFormatException);
   });
+  test('Customer is ready only after a real ID and network connection exist',
+      () {
+    expect(customerConnectionReady(true, '', 1), isFalse);
+    expect(customerConnectionReady(true, '175155908', 0), isFalse);
+    expect(customerConnectionReady(false, '175155908', 1), isFalse);
+    expect(customerConnectionReady(true, '175155908', 1), isTrue);
+  });
   test('Operator shows identity only for supported valid metadata', () {
     expect(
         peerCustomerLabel(

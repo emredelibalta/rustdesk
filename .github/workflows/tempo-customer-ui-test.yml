@@ -1,0 +1,103 @@
+name: TempoDestek close and ID x64
+'on':
+  push:
+    branches:
+    - tempo-customer-close-test
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+    - name: Checkout
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        submodules: recursive
+        fetch-depth: 50
+    - name: Check native sources unchanged
+      shell: bash
+      run: git diff --exit-code 15691394343f83e9ddbd53e0046b7291fed4a78c HEAD -- src libs Cargo.toml Cargo.lock build.rs build.py
+        flutter/windows
+    - name: Restore bridge
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: bridge-artifact
+        path: ./
+        run-id: 43192492918
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Restore customer portable base
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: TempoDestek-single-exe-x64
+        path: customer-input
+        run-id: 43211450237
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Stage verified customer native files
+      shell: powershell
+      run: 'python -m pip install -r libs/portable/requirements.txt
+
+        python scripts/tempo/customer_ui_package.py unpack --base-exe customer-input/TempoDestek.exe --baseline customer-original
+
+        if ($LASTEXITCODE -ne 0) { throw ''Customer base extraction failed'' }
+
+        Copy-Item customer-original customer-bundle -Recurse
+
+        New-Item -ItemType Directory -Force target/release | Out-Null
+
+        Copy-Item customer-original/librustdesk.dll target/release/librustdesk.dll'
+    - name: Install flutter
+      id: flutter
+      uses: subosito/flutter-action@2783a3f08e1baf891508463f8c6653c258246225
+      with:
+        channel: stable
+        flutter-version: 3.24.5
+        architecture: x64
+    - name: Replace engine with rustdesk custom flutter engine
+      run: 'flutter doctor -v
+
+        flutter precache --windows
+
+        Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile
+        windows-x64-release.zip
+
+        Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
+
+        mv -Force windows-x64-release/*  C:/hostedtoolcache/windows/flutter/stable-3.24.5-x64/bin/cache/artifacts/engine/windows-x64-release/
+
+        '
+    - name: Patch flutter
+      shell: bash
+      run: "cp .github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff $(dirname $(dirname $(which flutter)))\ncd $(dirname\
+        \ $(dirname $(which flutter)))\nif [[ \"3.24.5\" == 3.24.5 ]]; then\n  git apply flutter_3.24.4_dropdown_menu_enableFilter.diff\n\
+        fi\n"
+    - name: Test and build customer UI
+      shell: bash
+      run: 'set -e
+
+        cd flutter
+
+        flutter pub get
+
+        flutter test test/tempo_customer_identity_test.dart
+
+        flutter analyze --no-fatal-infos --no-fatal-warnings lib/desktop/tempo_customer lib/desktop/widgets/tabbar_widget.dart
+
+        flutter build windows --release --dart-define=TEMPO_CUSTOMER=true'
+    - name: Build single customer EXE
+      shell: powershell
+      run: 'Rename-Item flutter/build/windows/x64/runner/Release/rustdesk.exe TempoDestek.exe
+
+        Copy-Item flutter/build/windows/x64/runner/Release/* customer-bundle/ -Recurse -Force
+
+        python scripts/tempo/customer_ui_package.py pack --base-exe customer-input/TempoDestek.exe --baseline customer-original
+        --bundle customer-bundle --output TempoDestek-output/TempoDestek.exe
+
+        if ($LASTEXITCODE -ne 0) { throw ''Customer packaging failed'' }'
+    - name: Upload customer EXE
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: TempoDestek-close-id-v0.9-x64
+        path: TempoDestek-output/TempoDestek.exe
+        if-no-files-found: error

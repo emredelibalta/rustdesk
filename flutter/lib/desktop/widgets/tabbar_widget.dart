@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../tempo_customer/lifecycle.dart';
 import 'dart:math';
 import 'dart:ui' as ui;
 
@@ -442,6 +443,10 @@ class _DesktopTabState extends State<DesktopTab>
 
   @override
   void onWindowClose() async {
+    if (isMainWindow && const bool.fromEnvironment('TEMPO_CUSTOMER')) {
+      await closeTempoCustomer();
+      return;
+    }
     mainWindowClose() async => await windowManager.hide();
     notMainWindowClose(WindowController windowController) async {
       if (controller.length != 0) {

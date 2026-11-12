@@ -147,7 +147,7 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
                                           child: SelectableText(
                                               _deviceId.isEmpty
                                                   ? 'Kimlik oluşturuluyor…'
-                                                  : formatID(_deviceId),
+                                                  : _deviceId,
                                               style: const TextStyle(
                                                   fontSize: 26))),
                                       IconButton(

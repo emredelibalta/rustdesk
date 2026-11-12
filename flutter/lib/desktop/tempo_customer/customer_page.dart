@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../common.dart';
+import '../../common/formatter/id_formatter.dart' show formatID;
 import '../../models/platform_model.dart';
 import '../pages/desktop_setting_page.dart';
 import '../pages/desktop_tab_page.dart';
@@ -147,7 +148,7 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
                                           child: SelectableText(
                                               _deviceId.isEmpty
                                                   ? 'Kimlik oluşturuluyor…'
-                                                  : _deviceId,
+                                                  : formatID(_deviceId),
                                               style: const TextStyle(
                                                   fontSize: 26))),
                                       IconButton(
@@ -258,7 +259,7 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
                               onPressed: () => showAboutDialog(
                                       context: context,
                                       applicationName: 'TempoDestek',
-                                      applicationVersion: 'Test 0.9',
+                                      applicationVersion: 'Test 0.10',
                                       children: [
                                         const Text(
                                             'RustDesk altyapısı · AGPL-3.0\nKaynak: github.com/emredelibalta/rustdesk')

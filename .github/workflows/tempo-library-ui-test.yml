@@ -1,0 +1,96 @@
+name: Tempo library UI x64 test
+'on':
+  push:
+    branches:
+    - tempo-library-ui-test
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+    - name: Checkout
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        submodules: recursive
+        fetch-depth: 50
+    - name: Verify native sources match the reused build
+      shell: bash
+      run: git diff --exit-code 04286d2ceeb4924d13a0b789a0bf4d972dfce08a HEAD -- src libs Cargo.toml Cargo.lock build.rs build.py
+        flutter/windows
+    - name: Restore existing bridge
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: bridge-artifact
+        path: ./
+        run-id: 43192492918
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Restore verified operator native bundle
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: rustdesk-unsigned-windows-x86_64
+        path: bundle
+        run-id: 43211002998
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Stage unchanged native DLL
+      shell: powershell
+      run: '$expected = ''76c622284398b61dea0a40dcb4cc0262bbadc805f0a10ecf01962e527dde9c55''
+
+        if ((Get-FileHash bundle/librustdesk.dll -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw ''Native DLL mismatch''
+        }
+
+        New-Item -ItemType Directory -Force target/release | Out-Null
+
+        Copy-Item bundle/librustdesk.dll target/release/librustdesk.dll'
+    - name: Install flutter
+      id: flutter
+      uses: subosito/flutter-action@2783a3f08e1baf891508463f8c6653c258246225
+      with:
+        channel: stable
+        flutter-version: 3.24.5
+        architecture: x64
+    - name: Replace engine with rustdesk custom flutter engine
+      run: 'flutter doctor -v
+
+        flutter precache --windows
+
+        Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile
+        windows-x64-release.zip
+
+        Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
+
+        mv -Force windows-x64-release/*  C:/hostedtoolcache/windows/flutter/stable-3.24.5-x64/bin/cache/artifacts/engine/windows-x64-release/
+
+        '
+    - name: Patch flutter
+      shell: bash
+      run: "cp .github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff $(dirname $(dirname $(which flutter)))\ncd $(dirname\
+        \ $(dirname $(which flutter)))\nif [[ \"3.24.5\" == 3.24.5 ]]; then\n  git apply flutter_3.24.4_dropdown_menu_enableFilter.diff\n\
+        fi\n"
+    - name: Validate and build library UI
+      shell: bash
+      run: 'set -e
+
+        cd flutter
+
+        flutter pub get
+
+        flutter test test/tempo_catalog_test.dart test/tempo_customer_identity_test.dart
+
+        flutter analyze --no-fatal-infos --no-fatal-warnings lib/desktop/tempo
+
+        flutter build windows --release'
+    - name: Assemble operator bundle
+      shell: powershell
+      run: 'Copy-Item flutter/build/windows/x64/runner/Release/* bundle/ -Recurse -Force
+
+        if ((Get-FileHash bundle/librustdesk.dll -Algorithm SHA256).Hash.ToLower() -ne ''76c622284398b61dea0a40dcb4cc0262bbadc805f0a10ecf01962e527dde9c55'')
+        { throw ''Native DLL changed'' }'
+    - name: Upload operator test bundle
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: TempoOperator-library-v0.6-x64
+        path: bundle
+        if-no-files-found: error

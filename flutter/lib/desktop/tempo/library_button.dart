@@ -36,7 +36,7 @@ class _LibraryDialog extends StatefulWidget {
 class _LibraryDialogState extends State<_LibraryDialog> {
   List<TempoPackage> _records = [];
   final _selected = <String>{};
-  String _product = 'Tümü', _query = '', _error = '';
+  String _version = 'Tümü', _product = 'Tümü', _query = '', _error = '';
   bool _loading = true;
   File get _file {
     final root = Platform.environment['LOCALAPPDATA'];
@@ -54,12 +54,14 @@ class _LibraryDialogState extends State<_LibraryDialog> {
   Future<void> _load() async {
     try {
       final file = _file;
-      final list = await file.exists()
+      final list = withTempoPartnerPackages(await file.exists()
           ? readTempoCatalog(await file.readAsString())
-          : _examples();
+          : _examples());
       if (mounted)
         setState(() {
           _records = list;
+          if (!list.any((p) => '${p.major} / ${p.version}' == _version))
+            _version = 'Tümü';
           _selected.clear();
           _error = '';
           _loading = false;
@@ -90,6 +92,7 @@ class _LibraryDialogState extends State<_LibraryDialog> {
         });
       }).toList();
   Future<void> _save(List<TempoPackage> records) async {
+    records = withTempoPartnerPackages(records);
     final text = const JsonEncoder.withIndent('  ')
         .convert(records.map((p) => p.toJson()).toList());
     readTempoCatalog(text);
@@ -103,6 +106,8 @@ class _LibraryDialogState extends State<_LibraryDialog> {
     if (mounted)
       setState(() {
         _records = records;
+        if (!records.any((p) => '${p.major} / ${p.version}' == _version))
+          _version = 'Tümü';
         _selected.clear();
         _error = '';
       });
@@ -161,7 +166,13 @@ class _LibraryDialogState extends State<_LibraryDialog> {
                         pick(
                             'Paket',
                             kind,
-                            ['Server', 'Client', 'e-Defter', 'Diğer'],
+                            [
+                              'Server',
+                              'Client',
+                              'e-Defter',
+                              'Partner',
+                              'Diğer'
+                            ],
                             (v) => kind = v),
                         pick(
                             'Durum',
@@ -306,16 +317,18 @@ class _LibraryDialogState extends State<_LibraryDialog> {
   Widget build(BuildContext context) {
     final shown = _records
         .where((p) =>
+            (_version == 'Tümü' || '${p.major} / ${p.version}' == _version) &&
             (_product == 'Tümü' || p.product == _product) &&
             '${p.label} ${p.note}'.toLowerCase().contains(_query.toLowerCase()))
         .toList();
-    final newest = <String, TempoPackage>{};
-    for (final p in shown.where((p) => p.status == 'Kullanıma hazır')) {
-      final key = '${p.product} ${p.major}';
-      if (!newest.containsKey(key) ||
-          compareTempoVersions(p.version, newest[key]!.version) > 0)
-        newest[key] = p;
-    }
+    final versions =
+        _records.map((p) => '${p.major} / ${p.version}').toSet().toList()
+          ..sort((a, b) {
+            final x = a.split(' / '), y = b.split(' / ');
+            final major = int.parse(y[0].substring(1))
+                .compareTo(int.parse(x[0].substring(1)));
+            return major != 0 ? major : compareTempoVersions(y[1], x[1]);
+          });
     return AlertDialog(
         title: Text('Tempo Kütüphanesi — ${widget.peerId}'),
         content: SizedBox(
@@ -324,24 +337,44 @@ class _LibraryDialogState extends State<_LibraryDialog> {
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Text(
-                  'Yerel kütüphane • Mikro sitesinden otomatik sürüm taraması yapılmaz.'),
-              Wrap(spacing: 10, children: [
-                DropdownButton<String>(
-                    value: _product,
-                    items: ['Tümü', 'Fly', 'Jump', 'Run', 'Müşavir']
-                        .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                        .toList(),
-                    onChanged: (v) => setState(() {
-                          _product = v!;
-                          _selected.clear();
-                        })),
-                TextButton(
-                    onPressed: _loading ? null : () => _edit(),
-                    child: const Text('Paket ekle')),
-                TextButton(onPressed: _load, child: const Text('Yenile')),
-                TextButton(onPressed: _import, child: const Text('İçe aktar')),
-                TextButton(onPressed: _export, child: const Text('Dışa aktar'))
-              ]),
+                  'Sürüm ve ürün seçin, indireceğiniz paketleri işaretleyin.'),
+              Wrap(
+                  spacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text('Sürüm:'),
+                    DropdownButton<String>(
+                        value: _version,
+                        items: ['Tümü', ...versions]
+                            .map((v) =>
+                                DropdownMenuItem(value: v, child: Text(v)))
+                            .toList(),
+                        onChanged: _loading
+                            ? null
+                            : (v) => setState(() {
+                                  _version = v!;
+                                  _selected.clear();
+                                })),
+                    const Text('Ürün:'),
+                    DropdownButton<String>(
+                        value: _product,
+                        items: ['Tümü', 'Fly', 'Jump', 'Run', 'Müşavir']
+                            .map((p) =>
+                                DropdownMenuItem(value: p, child: Text(p)))
+                            .toList(),
+                        onChanged: (v) => setState(() {
+                              _product = v!;
+                              _selected.clear();
+                            })),
+                    TextButton(
+                        onPressed: _loading ? null : () => _edit(),
+                        child: const Text('Paket ekle')),
+                    TextButton(onPressed: _load, child: const Text('Yenile')),
+                    TextButton(
+                        onPressed: _import, child: const Text('İçe aktar')),
+                    TextButton(
+                        onPressed: _export, child: const Text('Dışa aktar'))
+                  ]),
               TextField(
                   decoration:
                       const InputDecoration(labelText: 'Sürüm / paket ara'),
@@ -349,8 +382,6 @@ class _LibraryDialogState extends State<_LibraryDialog> {
                         _query = v;
                         _selected.clear();
                       })),
-              Text(
-                  'Hazır sürümler: ${newest.entries.map((e) => "${e.key}: ${e.value.version}").join(" | ")}'),
               if (_error.isNotEmpty)
                 Text(_error, style: const TextStyle(color: Colors.red)),
               Expanded(
@@ -367,10 +398,9 @@ class _LibraryDialogState extends State<_LibraryDialog> {
                                               ? _selected.add(p.id)
                                               : _selected.remove(p.id);
                                         }),
-                                title: Text(p.label),
-                                subtitle:
-                                    Text('${p.status} • ${p.date}\n${p.url}'),
-                                isThreeLine: true,
+                                title: Text(p.label,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold)),
                                 secondary: IconButton(
                                     tooltip: 'Düzenle',
                                     icon: const Icon(Icons.edit),

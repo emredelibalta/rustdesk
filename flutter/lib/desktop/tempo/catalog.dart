@@ -17,7 +17,8 @@ class TempoPackage {
     if (!['Fly', 'Jump', 'Run', 'Müşavir'].contains(product) ||
         !RegExp(r'^V\d{1,3}$').hasMatch(major) ||
         !RegExp(r'^\d{1,4}[a-zA-Z]{0,2}$').hasMatch(version) ||
-        !['Server', 'Client', 'e-Defter', 'Diğer'].contains(package) ||
+        !['Server', 'Client', 'e-Defter', 'Partner', 'Diğer']
+            .contains(package) ||
         !['Test ediliyor', 'Kullanıma hazır', 'Arşiv'].contains(status)) {
       throw const FormatException('Ürün, sürüm, paket veya durum geçersiz.');
     }
@@ -62,6 +63,28 @@ List<TempoPackage> readTempoCatalog(String text) {
   for (final r in result) {
     if (!keys.add(r.key) || r.id.isEmpty || !ids.add(r.id)) {
       throw const FormatException('Yinelenen kayıt veya boş kimlik.');
+    }
+  }
+  return result;
+}
+
+List<TempoPackage> withTempoPartnerPackages(List<TempoPackage> records) {
+  final result = [...records];
+  for (final product in ['Fly', 'Jump', 'Run', 'Müşavir']) {
+    final partner = TempoPackage({
+      'id': 'tempo-partner-v17-07d-$product',
+      'product': product,
+      'major': 'V17',
+      'version': '07d',
+      'package': 'Partner',
+      'date': '',
+      'status': 'Test ediliyor',
+      'url':
+          'https://cdn-mikro.atros.com.tr/mikro/v17/07d/v17xx_Partner_Setupx064.exe',
+      'note': 'Kullanıcının sağladığı ortak Partner bağlantısı (07d).',
+    });
+    if (!result.any((p) => p.key == partner.key || p.id == partner.id)) {
+      result.add(partner);
     }
   }
   return result;

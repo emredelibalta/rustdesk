@@ -30,6 +30,26 @@ void main() {
         throwsFormatException);
   });
   test(
+      'Partner is added to all four products without replacing existing records',
+      () {
+    final existing = TempoPackage(record());
+    final result = withTempoPartnerPackages([existing]);
+    expect(result.first, same(existing));
+    final partners = result.where((p) => p.package == 'Partner').toList();
+    expect(partners.map((p) => p.product).toSet(),
+        {'Fly', 'Jump', 'Run', 'Müşavir'});
+    expect(
+        partners.every((p) =>
+            p.version == '07d' &&
+            p.url.endsWith('/07d/v17xx_Partner_Setupx064.exe')),
+        isTrue);
+    expect(withTempoPartnerPackages(result).length, result.length);
+    expect(
+        readTempoCatalog(jsonEncode(result.map((p) => p.toJson()).toList()))
+            .length,
+        5);
+  });
+  test(
       'Download command preserves Unicode and validated manifest without executing locally',
       () {
     final command = buildTempoDownloadCommand([TempoPackage(record())]);

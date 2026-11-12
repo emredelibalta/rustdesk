@@ -1505,6 +1505,10 @@ impl Connection {
 
     async fn on_open(&mut self, addr: SocketAddr) -> bool {
         log::debug!("#{} Connection opened from {}.", self.inner.id, addr);
+        if crate::tempo_customer::enabled() && !crate::tempo_customer::identity_ready() {
+            self.send_login_error("Please complete the customer identity form first").await;
+            return false;
+        }
         if !self.check_whitelist(&addr).await {
             return false;
         }
@@ -2023,6 +2027,9 @@ impl Connection {
         {
             platform_additions.insert("support_view_camera".into(), json!(true));
         }
+
+        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+        crate::tempo_customer::append_peer_identity(&mut platform_additions);
 
         #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
         if !platform_additions.is_empty() {

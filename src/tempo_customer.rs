@@ -35,3 +35,48 @@ pub(crate) fn decorate_sysinfo(value: &mut serde_json::Value) {
         value["username"] = serde_json::json!(name);
     }
 }
+
+fn valid_identity(person: &str, tax_id: &str) -> bool {
+    let person = person.trim();
+    !person.is_empty()
+        && person.chars().count() <= 80
+        && !person.chars().any(char::is_control)
+        && !tax_id.is_empty()
+        && tax_id.len() <= 11
+        && tax_id.bytes().all(|b| b.is_ascii_digit())
+}
+
+pub(crate) fn identity_ready() -> bool {
+    valid_identity(
+        &Config::get_option("tempo-person"),
+        &Config::get_option("tempo-tax-id"),
+    )
+}
+
+pub(crate) fn append_peer_identity(additions: &mut serde_json::Map<String, serde_json::Value>) {
+    let person = Config::get_option("tempo-person");
+    let tax_id = Config::get_option("tempo-tax-id");
+    if valid_identity(&person, &tax_id) {
+        additions.insert("tempo_full_name".into(), serde_json::json!(person));
+        additions.insert("tempo_tax_id".into(), serde_json::json!(tax_id));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_identity;
+
+    #[test]
+    fn requires_name_and_up_to_eleven_ascii_digits() {
+        assert!(valid_identity("Muhammet Kapancı", "00123456789"));
+        assert!(valid_identity("Muhammet", "1234567890"));
+        for (name, tax_id) in [
+            (" ", "123"),
+            ("Ali", ""),
+            ("Ali", "123456789012"),
+            ("Ali", "12A34"),
+        ] {
+            assert!(!valid_identity(name, tax_id));
+        }
+    }
+}

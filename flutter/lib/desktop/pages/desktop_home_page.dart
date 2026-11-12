@@ -87,7 +87,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         ),
       Align(
         alignment: Alignment.center,
-        child: loadLogo(),
+        child: Image.asset('assets/tempo-logo.png', width: 160, height: 72, fit: BoxFit.contain).marginOnly(top: 16, bottom: 12),
       ),
       buildTip(context),
       if (!isOutgoingOnly) buildIDBoard(context),

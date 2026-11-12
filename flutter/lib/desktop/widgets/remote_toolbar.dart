@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import '../tempo_customer/peer_identity.dart';
 import '../tempo/library_button_stub.dart'
     if (dart.library.io) '../tempo/library_button.dart';
 
@@ -806,6 +807,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
       BuildContext context, _ToolbarEdge edge, bool isHorizontal) {
     final List<Widget> toolbarItems = [];
     toolbarItems.add(_PinMenu(state: widget.state));
+    toolbarItems.add(TempoPeerIdentity(ffi: widget.ffi));
     toolbarItems.add(Obx(() {
       final privacyModeState = PrivacyModeState.find(widget.id);
       if ((privacyModeState.isEmpty ||

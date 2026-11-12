@@ -5,6 +5,7 @@ name: TempoDestek customer portable x64
     branches:
     - tempo-library-test
     paths:
+    - src/server/connection.rs
     - src/tempo_customer.rs
     - src/lib.rs
     - src/core_main.rs

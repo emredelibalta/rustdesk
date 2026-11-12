@@ -22,6 +22,7 @@ void main() {
   test('Downloads quote URL data and never start an installer', () {
     final command = buildTempoToolDownload(TempoTool(
         '1', 'A', 'Java', '', 'https://example.com/java.exe?name=O%27Brien'));
+    expect(command, contains("\$ProgressPreference='SilentlyContinue'"));
     expect(command, contains('Get-AuthenticodeSignature'));
     expect(command, contains('MikroKurulum\\Araclar'));
     expect(command, isNot(contains('Start-Process')));

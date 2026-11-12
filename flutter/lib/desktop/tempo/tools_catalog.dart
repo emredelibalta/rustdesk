@@ -61,7 +61,7 @@ String tempoPsLiteral(String value) => "'${value.replaceAll("'", "''")}'";
 
 String buildTempoToolDownload(TempoTool tool) {
   final filename = Uri.parse(tool.url).pathSegments.last;
-  return "& { \$ErrorActionPreference='Stop'; [Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12; "
+  return "& { \$ErrorActionPreference='Stop'; \$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12; "
       "\$d=Join-Path ([Environment]::GetFolderPath('Desktop')) 'MikroKurulum\\Araclar'; New-Item -ItemType Directory -Force -Path \$d|Out-Null; "
       "\$f=Join-Path \$d ${tempoPsLiteral(filename)}; \$p=\$f+'.part'; try { Invoke-WebRequest -UseBasicParsing -Uri ${tempoPsLiteral(tool.url)} -OutFile \$p; "
       "if([IO.Path]::GetExtension(\$f) -in @('.exe','.msi')){ \$s=Get-AuthenticodeSignature -LiteralPath \$p; if(\$s.Status -ne 'Valid'){throw 'Gecerli uygulama imzasi yok. Dosya tamamlanmadi.'} } else { \$stream=[IO.File]::OpenRead(\$p); try{if(\$stream.ReadByte() -ne 80 -or \$stream.ReadByte() -ne 75){throw 'ZIP/JAR dosya basligi dogrulanamadi.'}}finally{\$stream.Dispose()} }; Move-Item -LiteralPath \$p -Destination \$f -Force; "

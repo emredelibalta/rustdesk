@@ -35,7 +35,7 @@ function Get-TempoInventory {
   })
   $ssms=@($programs | Where-Object {$_.DisplayName -match 'SQL Server Management Studio'})
   $javaAkis=@($programs | Where-Object {$_.DisplayName -match 'Java|OpenJDK|Temurin|AKIS|AKİS'})
-  $home=try{(Get-WinHomeLocation).HomeLocation}catch{'Okunamadi'}
+  $homeLocation=try{(Get-WinHomeLocation).HomeLocation}catch{'Okunamadi'}
   $languages=try{((Get-WinUserLanguageList).LanguageTag -join ', ')}catch{'Okunamadi'}
   $systemLocale=Get-WinSystemLocale
   $pending=(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired')
@@ -43,7 +43,7 @@ function Get-TempoInventory {
   [pscustomobject]@{
     Computer=$env:COMPUTERNAME; DesktopUser=$computer.UserName; ReportUser=[Security.Principal.WindowsIdentity]::GetCurrent().Name
     Windows=$os.Caption; WindowsVersion=$os.Version; Architecture=$os.OSArchitecture; Admin=$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    Country=$home; Culture=$culture.Name; CultureDisplay=$culture.DisplayName; UILanguage=(Get-UICulture).Name; UserLanguages=$languages
+    Country=$homeLocation; Culture=$culture.Name; CultureDisplay=$culture.DisplayName; UILanguage=(Get-UICulture).Name; UserLanguages=$languages
     SystemLocale=$systemLocale.Name; SystemLocaleDisplay=$systemLocale.DisplayName; AnsiCodePage=(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage').ACP
     ShortDate=$format.ShortDatePattern; LongDate=$format.LongDatePattern; ShortTime=$format.ShortTimePattern; LongTime=$format.LongTimePattern; FirstDay=$format.GetDayName($format.FirstDayOfWeek)
     DecimalSeparator=$culture.NumberFormat.NumberDecimalSeparator; GroupSeparator=$culture.NumberFormat.NumberGroupSeparator; ListSeparator=$culture.TextInfo.ListSeparator; TimeZone=(Get-TimeZone).Id

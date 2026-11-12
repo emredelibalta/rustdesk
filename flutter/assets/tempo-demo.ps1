@@ -27,6 +27,9 @@ function Get-TempoNextInstance($names) {
   while ($names -contains $candidate) { $candidate='TEMPODEMO'+$number; $number++ }
   return $candidate
 }
+function Test-TempoSaPassword([string]$Value) {
+  return $Value.Length -ge 12 -and $Value -cmatch '[A-Z]' -and $Value -cmatch '[a-z]' -and $Value -match '[0-9]' -and $Value -match '[^A-Za-z0-9]' -and $Value -notmatch '["\\\r\n]'
+}
 function Get-TempoInventory {
   $culture=Get-Culture; $format=$culture.DateTimeFormat; $computer=Get-CimInstance Win32_ComputerSystem; $os=Get-CimInstance Win32_OperatingSystem
   $programs=@(foreach($key in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*','HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*')) {
@@ -67,7 +70,7 @@ Add-TempoLabel 'Siralama duzeni (collation)' 2
 $collation=New-Object Windows.Forms.ComboBox;$collation.DropDownStyle='DropDownList';$collation.Dock='Fill';$collation.Items.AddRange(@('Turkish_CI_AS','SQL_Latin1_General_CP1254_CI_AS','Latin1_General_CI_AS','SQL_Latin1_General_CP1_CI_AS'));$settings.Controls.Add($collation,1,2)
 Add-TempoLabel 'Kimlik dogrulama' 3
 $auth=New-Object Windows.Forms.ComboBox;$auth.DropDownStyle='DropDownList';$auth.Items.AddRange(@('Windows','Windows + SQL (karma)'));$auth.SelectedIndex=0;$auth.Dock='Fill';$settings.Controls.Add($auth,1,3)
-$password=New-Object Windows.Forms.TextBox;$password.UseSystemPasswordChar=$true;$password.Enabled=$false;$password.Dock='Fill';$settings.Controls.Add($password,2,3)
+$password=New-Object Windows.Forms.TextBox;$password.UseSystemPasswordChar=$true;$password.AccessibleName='sa parolasi (karma mod)';$password.Enabled=$false;$password.Dock='Fill';$settings.Controls.Add($password,2,3)
 $auth.Add_SelectedIndexChanged({$password.Enabled=$auth.SelectedIndex -eq 1;if(!$password.Enabled){$password.Clear()}})
 $license=New-Object Windows.Forms.CheckBox;$license.Text='Kurulum medyasindaki Microsoft SQL Server lisans kosullarini kabul ediyorum.';$license.Dock='Fill';$settings.Controls.Add($license,1,4);$settings.SetColumnSpan($license,2)
 $install=New-Object Windows.Forms.Button;$install.Text='Onayla ve yeni instance kur';$install.Dock='Fill';$install.Enabled=$false;$settings.Controls.Add($install,1,5)
@@ -120,8 +123,7 @@ $install.Add_Click({
   if($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation'){throw 'Gecerli Microsoft imzasi bulunamadi. Kurulum durduruldu.'}
   if((Get-Item -LiteralPath $media.Text).VersionInfo.ProductVersion -notmatch '^15\.'){throw 'SQL Server 2019 (15.x) medyasi gerekli.'}
   $mixed=$auth.SelectedIndex -eq 1
-  if($mixed -and ($password.Text.Length -lt 12 -or $password.Text -match '["\\
-]' -or $password.Text -notmatch '[A-Z]' -or $password.Text -notmatch '[a-z]' -or $password.Text -notmatch '[0-9]' -or $password.Text -notmatch '[^A-Za-z0-9]')){throw 'Karma mod icin en az 12 karakter, buyuk/kucuk harf, rakam ve sembol iceren sa parolasi yazin. Cift tirnak, ters bolu ve yeni satir kullanmayin.'}
+  if($mixed -and !(Test-TempoSaPassword $password.Text)){throw 'Karma mod icin en az 12 karakter, buyuk/kucuk harf, rakam ve sembol iceren sa parolasi yazin. Cift tirnak, ters bolu ve yeni satir kullanmayin.'}
   $account=[Security.Principal.WindowsIdentity]::GetCurrent().Name
   if($account -match '["\r\n]' -or $account -match '^NT AUTHORITY\\'){throw 'Yonetici yetkili gercek Windows kullanici hesabiyla calistirin; servis hesabi kabul edilmez.'}
   $answer=[Windows.Forms.MessageBox]::Show("Hedef: $env:COMPUTERNAME`nYeni instance: $name`nSQL 2019 Express`nWindows yoneticisi: $account`nKimlik dogrulama: $($auth.SelectedItem)`nCollation: $($collation.SelectedItem)`nTCP ve Named Pipes: kapali (yerel demo)`n`nSessiz kurulumu baslatmak istiyor musunuz?",'SQL kurulumu onayi','YesNo','Warning')

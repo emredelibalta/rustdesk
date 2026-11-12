@@ -1,0 +1,204 @@
+name: TempoDestek customer portable x64
+'on':
+  workflow_dispatch: {}
+  push:
+    branches:
+    - tempo-library-test
+    paths:
+    - src/tempo_customer.rs
+    - src/lib.rs
+    - src/core_main.rs
+    - src/hbbs_http/sync.rs
+    - flutter/lib/desktop/tempo_customer/**
+    - flutter/lib/desktop/pages/desktop_tab_page.dart
+    - flutter/test/tempo_customer_identity_test.dart
+    - flutter/assets/tempo-logo.png
+    - res/*.ico
+    - flutter/windows/runner/resources/app_icon.ico
+    - .github/workflows/tempo-customer-test.yml
+permissions:
+  contents: read
+  actions: read
+env:
+  SCITER_RUST_VERSION: '1.75'
+  RUST_VERSION: '1.75'
+  MAC_RUST_VERSION: '1.81'
+  CARGO_NDK_VERSION: 3.1.2
+  SCITER_ARMV7_CMAKE_VERSION: 3.29.7
+  SCITER_NASM_DEBVERSION: 2.15.05-1
+  LLVM_VERSION: 15.0.6
+  FLUTTER_VERSION: 3.24.5
+  ANDROID_FLUTTER_VERSION: 3.24.5
+  FLUTTER_WINDOWS_ARM_VERSION: 3.44.9
+  FLUTTER_MACOS_ARM_VERSION: 3.44.9
+  FLUTTER_ELINUX_VERSION: 3.16.9
+  TAG_NAME: tempo-test
+  VCPKG_BINARY_SOURCES: clear;x-gha,readwrite
+  VCPKG_COMMIT_ID: 9e593bb18ea69cc5095e012465dcd675a822ed0d
+  VCPKG_CMAKE_VERSION: 4.3.0
+  ARMV7_VCPKG_COMMIT_ID: 6f29f12e82a8293156836ad81cc9bf5af41fe836
+  VERSION: 1.5.3
+  NDK_VERSION: r28c
+  UPLOAD_ARTIFACT: 'true'
+  PUBLISH_UPDATE_METADATA: 'false'
+  TEMPO_CUSTOMER: '1'
+jobs:
+  build-for-windows-flutter:
+    name: ${{ matrix.job.target }}
+    runs-on: ${{ matrix.job.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+        - target: x86_64-pc-windows-msvc
+          os: windows-2022
+          arch: x86_64
+          flutter-arch: x64
+          vcpkg-triplet: x64-windows-static
+          build-args: --vram
+    steps:
+    - name: Export GitHub Actions cache environment variables
+      uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410
+      with:
+        script: 'core.exportVariable(''ACTIONS_CACHE_URL'', process.env.ACTIONS_CACHE_URL || '''');
+
+          core.exportVariable(''ACTIONS_RUNTIME_TOKEN'', process.env.ACTIONS_RUNTIME_TOKEN || '''');
+
+          '
+    - name: Checkout source code
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        submodules: recursive
+    - name: Restore bridge files
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: ${{ matrix.job.arch == 'aarch64' && 'bridge-artifact-flutter-3.44' || 'bridge-artifact' }}
+        path: ./
+        run-id: 43192492918
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Install LLVM and Clang
+      uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0
+      with:
+        version: ${{ env.LLVM_VERSION }}
+    - name: Install flutter
+      id: flutter
+      uses: subosito/flutter-action@2783a3f08e1baf891508463f8c6653c258246225
+      with:
+        channel: stable
+        flutter-version: ${{ matrix.job.arch == 'aarch64' && env.FLUTTER_WINDOWS_ARM_VERSION || env.FLUTTER_VERSION
+          }}
+        architecture: x64
+    - name: Replace engine with rustdesk custom flutter engine
+      run: 'flutter doctor -v
+
+        flutter precache --windows
+
+        Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip
+        -OutFile windows-x64-release.zip
+
+        Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
+
+        mv -Force windows-x64-release/*  C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release/
+
+        '
+    - name: Patch flutter
+      shell: bash
+      run: "cp .github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff $(dirname $(dirname $(which flutter)))\n\
+        cd $(dirname $(dirname $(which flutter)))\nif [[ \"3.24.5\" == ${{env.FLUTTER_VERSION}} ]]; then\n  git\
+        \ apply flutter_3.24.4_dropdown_menu_enableFilter.diff\nfi\n"
+    - name: Check customer form
+      shell: bash
+      run: 'cd flutter
+
+        flutter pub get
+
+        flutter test test/tempo_customer_identity_test.dart
+
+        flutter analyze --no-fatal-infos --no-fatal-warnings lib/desktop/tempo_customer lib/desktop/pages/desktop_tab_page.dart'
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: ${{ env.SCITER_RUST_VERSION }}
+        targets: ${{ matrix.job.target }}
+        components: rustfmt
+    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+      with:
+        prefix-key: ${{ matrix.job.os }}
+    - name: Setup vcpkg with Github Actions binary cache
+      uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
+      with:
+        vcpkgDirectory: C:\vcpkg
+        vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+        doNotCache: false
+    - name: Install vcpkg dependencies
+      env:
+        VCPKG_DEFAULT_HOST_TRIPLET: ${{ matrix.job.vcpkg-triplet }}
+      run: "if ! $VCPKG_ROOT/vcpkg \\\n  install \\\n  --triplet ${{ matrix.job.vcpkg-triplet }} \\\n  --x-install-root=\"\
+        $VCPKG_ROOT/installed\"; then\n  find \"${VCPKG_ROOT}/\" -name \"*.log\" | while read -r _1; do\n    echo\
+        \ \"$_1:\"\n    echo \"======\"\n    cat \"$_1\"\n    echo \"======\"\n    echo \"\"\n  done\n  exit 1\n\
+        fi\nhead -n 100 \"${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log\" ||\
+        \ true\n"
+      shell: bash
+    - name: Build rustdesk
+      run: "python -c \"from pathlib import Path; p=Path('build.py'); s=p.read_text(); s=s.replace('flutter build\
+        \ windows --release', 'flutter build windows --release --dart-define=TEMPO_CUSTOMER=true'); p.write_text(s)\"\
+        \n# Windows: build RustDesk\n# --hwcodec is shared by all Windows targets; per-target extras (e.g. --vram)\
+        \ come from the matrix\npython3 .\\build.py --portable --flutter --skip-portable-pack --hwcodec ${{ matrix.job.build-args\
+        \ }}\nmv ./flutter/build/windows/${{ matrix.job.flutter-arch }}/runner/Release ./rustdesk\n\n# Download\
+        \ usbmmidd_v2.zip and extract it to ./rustdesk\nInvoke-WebRequest -Uri https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip\
+        \ -OutFile usbmmidd_v2.zip\nExpand-Archive usbmmidd_v2.zip -DestinationPath .\nRemove-Item -Path usbmmidd_v2\\\
+        Win32 -Recurse\nRemove-Item -Path \"usbmmidd_v2\\deviceinstaller64.exe\", \"usbmmidd_v2\\deviceinstaller.exe\"\
+        , \"usbmmidd_v2\\usbmmidd.bat\"\nmv -Force .\\usbmmidd_v2 ./rustdesk\n\n# Download printer driver files\
+        \ and extract them to ./rustdesk\ntry {\n  Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/rustdesk_printer_driver_v4-1.4.zip\
+        \ -OutFile rustdesk_printer_driver_v4-1.4.zip\n  Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/printer_driver_adapter.zip\
+        \ -OutFile printer_driver_adapter.zip\n  Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/sha256sums\
+        \ -OutFile sha256sums\n\n  # Check and move the files\n  $checksum_driver = (Select-String -Path .\\sha256sums\
+        \ -Pattern '^([a-fA-F0-9]{64}) \\*rustdesk_printer_driver_v4-1.4\\.zip$').Matches.Groups[1].Value\n  $downloadsum_driver\
+        \ = Get-FileHash -Path rustdesk_printer_driver_v4-1.4.zip -Algorithm SHA256\n  $checksum_adapter = (Select-String\
+        \ -Path .\\sha256sums -Pattern '^([a-fA-F0-9]{64}) \\*printer_driver_adapter\\.zip$').Matches.Groups[1].Value\n\
+        \  $downloadsum_adapter = Get-FileHash -Path printer_driver_adapter.zip -Algorithm SHA256\n  if ($checksum_driver\
+        \ -eq $downloadsum_driver.Hash -and $checksum_adapter -eq $downloadsum_adapter.Hash) {\n      Write-Output\
+        \ \"rustdesk_printer_driver_v4-1.4, checksums match, extract the file.\"\n      Expand-Archive rustdesk_printer_driver_v4-1.4.zip\
+        \ -DestinationPath .\n      mkdir ./rustdesk/drivers\n      mv -Force .\\rustdesk_printer_driver_v4-1.4\
+        \ ./rustdesk/drivers/RustDeskPrinterDriver\n      Expand-Archive printer_driver_adapter.zip -DestinationPath\
+        \ .\n      mv -Force .\\printer_driver_adapter.dll ./rustdesk\n  } elseif ($checksum_driver -ne $downloadsum_driver.Hash)\
+        \ {\n      Write-Output \"rustdesk_printer_driver_v4-1.4, checksums do not match, ignore the file.\"\n \
+        \ } else {\n      Write-Output \"printer_driver_adapter.dll, checksums do not match, ignore the file.\"\n\
+        \  }\n} catch {\n    Write-Host \"Ingore the printer driver error.\"\n}\n"
+    - name: find Runner.res
+      continue-on-error: true
+      shell: bash
+      run: "runner_res=$(find . -name \"Runner.res\");\nif [ \"$runner_res\" == \"\" ]; then\n  echo \"Runner.res:\
+        \ not found\";\nelse\n  echo \"Runner.res: $runner_res\";\n  cp $runner_res ./libs/portable/Runner.res;\n\
+        \  echo \"list ./libs/portable/Runner.res\";\n  ls -l ./libs/portable/Runner.res;\nfi\n"
+    - name: Download RustDeskTempTopMostWindow artifacts
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: ${{ matrix.job.arch == 'aarch64' && 'topmostwindow-artifacts-ARM64' || 'topmostwindow-artifacts-x64'
+          }}
+        path: ./rustdesk
+        run-id: 43192492918
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build single portable EXE
+      shell: powershell
+      run: 'python -m pip install -r libs/portable/requirements.txt
+
+        python libs/portable/generate.py -f rustdesk -o libs/portable -e rustdesk.exe
+
+        if ($LASTEXITCODE -ne 0) { throw "Portable packaging failed" }
+
+        New-Item -ItemType Directory -Force TempoDestek-Output | Out-Null
+
+        Copy-Item target/release/rustdesk-portable-packer.exe TempoDestek-Output/TempoDestek.exe
+
+        if (-not (Test-Path TempoDestek-Output/TempoDestek.exe)) { throw "EXE missing" }
+
+        Get-FileHash TempoDestek-Output/TempoDestek.exe -Algorithm SHA256
+
+        '
+    - name: Upload TempoDestek single EXE
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: TempoDestek-single-exe-x64
+        path: TempoDestek-Output/TempoDestek.exe
+        if-no-files-found: error

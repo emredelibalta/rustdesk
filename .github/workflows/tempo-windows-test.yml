@@ -4,6 +4,9 @@ name: Tempo Windows x64 test build
   push:
     branches:
     - tempo-library-test
+    paths:
+    - flutter/lib/desktop/tempo/**
+    - flutter/test/tempo_catalog_test.dart
 permissions:
   contents: read
 env:

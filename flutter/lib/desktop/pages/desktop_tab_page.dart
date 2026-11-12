@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../tempo_customer/customer_page.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
@@ -49,14 +50,16 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
         selectedIcon: Icons.home_sharp,
         unselectedIcon: Icons.home_outlined,
         closable: false,
-        page: DesktopHomePage(
-          key: const ValueKey(kTabLabelHomePage),
-        )));
+        page: const bool.fromEnvironment('TEMPO_CUSTOMER')
+            ? const TempoCustomerPage()
+            : DesktopHomePage(key: const ValueKey(kTabLabelHomePage))));
     if (bind.isIncomingOnly()) {
       tabController.onSelected = (key) {
         if (key == kTabLabelHomePage) {
-          windowManager.setSize(getIncomingOnlyHomeSize());
-          setResizable(false);
+          windowManager.setSize(const bool.fromEnvironment('TEMPO_CUSTOMER')
+              ? const Size(720, 780)
+              : getIncomingOnlyHomeSize());
+          setResizable(const bool.fromEnvironment('TEMPO_CUSTOMER'));
         } else {
           windowManager.setSize(getIncomingOnlySettingsSize());
           setResizable(true);

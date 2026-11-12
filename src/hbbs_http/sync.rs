@@ -124,6 +124,7 @@ async fn start_hbbs_sync_async() {
                 // But strangely, sometimes we can get the username before login,
                 // we may not be able to get the username before login after the next restart.
                 let mut v = crate::get_sysinfo();
+                crate::tempo_customer::decorate_sysinfo(&mut v);
                 let sys_username = v["username"].as_str().unwrap_or_default().to_string();
                 // Though the username comparison is only necessary on Windows,
                 // we still keep the comparison on other platforms for consistency.

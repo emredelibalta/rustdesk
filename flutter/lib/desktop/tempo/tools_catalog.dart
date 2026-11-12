@@ -68,11 +68,17 @@ String buildTempoToolDownload(TempoTool tool) {
       "Write-Host ('Indirme tamamlandi: '+\$f); Write-Host 'Kurulum otomatik baslatilmadi.' } catch { Remove-Item -LiteralPath \$p -Force -ErrorAction SilentlyContinue; Write-Error \$_ } }";
 }
 
-String buildTempoDemoLaunch(String script) {
+String buildTempoDemoLaunch(String script, {String? reportJob}) {
+  if (reportJob != null && !RegExp(r'^[0-9]+$').hasMatch(reportJob)) {
+    throw const FormatException('Geçersiz rapor kimliği.');
+  }
   final lines =
       const LineSplitter().convert(script).map(tempoPsLiteral).join(',');
+  final launch = reportJob == null
+      ? "Start-Process (Join-Path \$env:WINDIR 'System32\\WindowsPowerShell\\v1.0\\powershell.exe') -ArgumentList @('-NoProfile','-STA','-File', ('\"'+\$p+'\"'))"
+      : "& (Join-Path \$env:WINDIR 'System32\\WindowsPowerShell\\v1.0\\powershell.exe') -NoProfile -File \$p -ReportOnly -ReportJob $reportJob";
   return "& { \$p=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'TempoDestek\\Demo\\TempoDemo.ps1'; "
       "New-Item -ItemType Directory -Force -Path (Split-Path \$p)|Out-Null; "
       "[IO.File]::WriteAllLines(\$p,@($lines),(New-Object Text.UTF8Encoding(\$true))); "
-      "Write-Host ('Demo paneli: '+\$p); Start-Process (Join-Path \$env:WINDIR 'System32\\WindowsPowerShell\\v1.0\\powershell.exe') -ArgumentList @('-NoProfile','-STA','-File', ('\"'+\$p+'\"')) }";
+      "Write-Host ('Demo betiği: '+\$p); $launch }";
 }

@@ -10,6 +10,7 @@ import '../../models/terminal_mouse_handler.dart';
 import 'catalog.dart';
 import 'bulk_catalog.dart';
 import 'download_progress.dart';
+import 'demo_inventory.dart';
 import 'tools_catalog.dart';
 import 'tools_dialog.dart';
 import 'package:flutter/services.dart';
@@ -464,24 +465,36 @@ class _LibraryDialogState extends State<_LibraryDialog> {
 
   Future<void> _demo() async {
     try {
-      final ok = await showDialog<bool>(
+      final action = await showDialog<String>(
           context: context,
           builder: (c) => AlertDialog(
                   title: const Text('Demo Kurulumu'),
                   content: const Text(
-                      'Hedef bilgisayarda kontrol paneli açılır. Bilgisayar, SQL instance/sürüm, SSMS ve dil/bölge bilgileri okunur. SQL 2019 Express kurulumu panelde ayrıca lisans ve kurulum onayı ister. Mevcut instance adları korunur; yeni ad seçilir. Yönetici yetkisi ve tam SQLEXPR kurulum medyası gerekir. Windows PowerShell komutları açık biçimde kullanılır.'),
+                      'Makine bilgilerini getir: karşı bilgisayarın SQL instance/sürüm, SSMS ve dil/bölge raporunu bu operatör ekranında gösterir. Ayar değiştirmez. Hedefte paneli aç: müşteri tarafında kurulum panelini açar. SQL 2019 Express kurulumu panelde ayrıca lisans ve kurulum onayı ister. Mevcut instance adları korunur; yeni ad seçilir. Yönetici yetkisi ve tam SQLEXPR kurulum medyası gerekir. Windows PowerShell komutları açık biçimde kullanılır.'),
                   actions: [
                     TextButton(
-                        onPressed: () => Navigator.pop(c, false),
+                        onPressed: () => Navigator.pop(c),
                         child: const Text('Vazgeç')),
                     FilledButton(
-                        onPressed: () => Navigator.pop(c, true),
+                        onPressed: () => Navigator.pop(c, 'report'),
+                        child: const Text('Makine bilgilerini getir')),
+                    TextButton(
+                        onPressed: () => Navigator.pop(c, 'setup'),
                         child: const Text('Hedefte paneli aç'))
                   ]));
-      if (ok != true || !mounted) return;
+      if (action == null || !mounted) return;
       final script = await rootBundle.loadString('assets/tempo-demo.ps1');
-      if (mounted)
+      if (!mounted) return;
+      if (action == 'report') {
+        final job = DateTime.now().microsecondsSinceEpoch.toString();
+        await showDialog<void>(context: context, barrierDismissible: false,
+          builder: (_) => _DownloadTerminal(peerId: widget.peerId,
+            command: buildTempoDemoLaunch(script, reportJob: job),
+            inventoryJobId: job, taskTitle: 'Hedef makine bilgileri',
+            sentStatus: 'Karşı bilgisayarın SQL ve bölge bilgileri okunuyor…'));
+      } else {
         await _runTool(buildTempoDemoLaunch(script), 'Demo kurulumu');
+      }
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     }
@@ -614,11 +627,12 @@ class _DownloadTerminal extends StatefulWidget {
       required this.command,
       this.taskTitle = 'Mikro indirme',
       this.progressJobId,
+      this.inventoryJobId,
       this.progressLabels = const [],
       this.sentStatus =
           'Komut gönderildi. İndirme sonucu aşağıdaki terminalde görünür.'});
   final String peerId, command, taskTitle, sentStatus;
-  final String? progressJobId;
+  final String? progressJobId, inventoryJobId;
   final List<String> progressLabels;
   @override
   State<_DownloadTerminal> createState() => _DownloadTerminalState();
@@ -627,6 +641,8 @@ class _DownloadTerminal extends StatefulWidget {
 class _DownloadTerminalState extends State<_DownloadTerminal> {
   late final FFI _ffi;
   late final TerminalModel _model;
+  TempoInventoryDecoder? _inventoryDecoder;
+  String? _inventoryReport;
   TempoProgressDecoder? _decoder;
   TempoDownloadProgress? _progress;
   final _focus = FocusNode();
@@ -647,6 +663,17 @@ class _DownloadTerminalState extends State<_DownloadTerminal> {
         if (!mounted || _progress?.finished == true) return;
         final progress = _decoder!.add(text);
         if (progress != null) setState(() => _progress = progress);
+      };
+    }
+    if (widget.inventoryJobId != null) {
+      _inventoryDecoder = TempoInventoryDecoder(widget.inventoryJobId!);
+      _model.onRemoteData = (text) {
+        if (!mounted || _inventoryReport != null) return;
+        final report = _inventoryDecoder!.add(text);
+        if (report != null) setState(() {
+          _inventoryReport = tempoInventoryText(report);
+          _status = 'Karşı bilgisayar bilgileri alındı. Ayarlar değiştirilmedi.';
+        });
       };
     }
     _model.addListener(_ready);
@@ -744,7 +771,10 @@ class _DownloadTerminalState extends State<_DownloadTerminal> {
                               : '${_progress!.fraction == null ? "Boyut bilinmiyor" : "%${(_progress!.fraction! * 100).floor()}"} • ${(_progress!.received / 1048576).toStringAsFixed(1)} MB${_progress!.total > 0 ? " / ${(_progress!.total / 1048576).toStringAsFixed(1)} MB" : ""}'),
                     ],
                     const SizedBox(height: 10),
-                    Expanded(
+                    if (_inventoryReport != null)
+                      Expanded(child: SingleChildScrollView(
+                        child: SelectableText(_inventoryReport!)))
+                    else Expanded(
                         child: TerminalMouseInteraction(_model.terminal,
                             controller: _model.terminalController,
                             focusNode: _focus,

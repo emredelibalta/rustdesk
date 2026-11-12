@@ -1,7 +1,5 @@
+param([switch]$ReportOnly,[string]$ReportJob='')
 # Tempo demo assistant: inventory is read-only; installation needs explicit confirmation.
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-[System.Windows.Forms.Application]::EnableVisualStyles()
 $ErrorActionPreference = 'Stop'
 function Get-TempoSqlInstances {
   $result = @{}
@@ -52,6 +50,18 @@ function Get-TempoInventory {
     PendingRestart=$pending; SqlInstances=@(Get-TempoSqlInstances); SSMS=$ssms; JavaAkis=$javaAkis
   }
 }
+if($ReportOnly){
+ try{
+  $inventory=Get-TempoInventory
+  $json=$inventory | ConvertTo-Json -Depth 6 -Compress
+  $payload=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+  Write-Host (('TD'+'I|')+$ReportJob+'|'+$payload+';')
+ }catch{Write-Error ('Makine bilgileri okunamadi: '+$_.Exception.Message)}
+ return
+}
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
 $form=New-Object Windows.Forms.Form
 $form.Text='Tempo Bilisim | Demo Kurulumu';$form.Size=New-Object Drawing.Size(880,760);$form.MinimumSize=$form.Size;$form.StartPosition='CenterScreen'
 $layout=New-Object Windows.Forms.TableLayoutPanel;$layout.Dock='Fill';$layout.ColumnCount=1;$layout.RowCount=3;$layout.RowStyles.Add((New-Object Windows.Forms.RowStyle('Absolute',52)));$layout.RowStyles.Add((New-Object Windows.Forms.RowStyle('Percent',100)));$layout.RowStyles.Add((New-Object Windows.Forms.RowStyle('Absolute',280)));$form.Controls.Add($layout)

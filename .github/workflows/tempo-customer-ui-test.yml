@@ -2,7 +2,7 @@ name: TempoDestek close and ID x64
 'on':
   push:
     branches:
-    - tempo-customer-close-test
+    - tempo-customer-crm-test
   workflow_dispatch: {}
 permissions:
   contents: read
@@ -98,6 +98,6 @@ jobs:
     - name: Upload customer EXE
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
-        name: TempoDestek-grouped-id-v0.10-x64
+        name: TempoDestek-crm-v0.11-x64
         path: TempoDestek-output/TempoDestek.exe
         if-no-files-found: error

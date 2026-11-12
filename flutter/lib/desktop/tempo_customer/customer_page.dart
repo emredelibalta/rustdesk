@@ -9,6 +9,7 @@ import '../pages/desktop_setting_page.dart';
 import '../pages/desktop_tab_page.dart';
 import 'identity.dart';
 import 'lifecycle.dart';
+import 'crm_queue.dart';
 
 class TempoCustomerPage extends StatefulWidget {
   const TempoCustomerPage({super.key});
@@ -22,6 +23,10 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
   bool get wantKeepAlive => true;
   final _taxId = TextEditingController();
   final _person = TextEditingController();
+  final _topic = TextEditingController();
+  Timer? _crmTimer;
+  bool _crmBusy = false;
+  String _crmStatus = "";
   bool _ready = false, _busy = true;
   String _error = '', _deviceId = '';
   Timer? _idTimer;
@@ -65,6 +70,9 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
   Future<void> _start() async {
     try {
       final identity = customerIdentity(_taxId.text, _person.text);
+      if (!RegExp(r'^[0-9]{10,11}$').hasMatch(identity['taxId']!)) {
+        throw const FormatException('CRM için VKN 10, TCKN 11 rakam olmalıdır.');
+      }
       setState(() {
         _busy = true;
         _error = '';
@@ -78,7 +86,11 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
       await bind.mainSetOption(
           key: 'preset-device-username', value: identity['display']!);
       await bind.mainSetOption(key: 'stop-service', value: '');
-      if (mounted) setState(() => _ready = true);
+      if (mounted) setState(() { _ready = true; _crmStatus = 'Bağlantı hazır olunca CRM talebi gönderilecek…'; });
+      _crmTimer?.cancel();
+      _crmTimer = Timer.periodic(const Duration(seconds: 25), (_) => _syncCrm());
+      await _refreshId();
+      await _syncCrm();
     } catch (e) {
       if (mounted)
         setState(() =>
@@ -88,9 +100,31 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
     }
   }
 
+  Future<void> _syncCrm() async {
+    if (!_ready || _crmBusy) return;
+    _crmBusy = true;
+    try {
+      final queue = TempoCrmQueue.instance;
+      final connected = customerConnectionReady(_ready, _deviceId, gFFI.serverModel.connectStatus);
+      if (!queue.accepted) {
+        if (!connected) return;
+        await queue.submit(_person.text.trim(), _taxId.text.trim(), _topic.text.trim(), _deviceId);
+      }
+      final active = await queue.pulse(connected);
+      if (mounted) setState(() => _crmStatus = active
+          ? (connected ? '✓ CRM talebiniz alındı. Personel bağlantısını bekleyin.' : 'CRM talebi açık; bağlantı bekleniyor.')
+          : 'Talep kapatıldı. Yeni destek için hazır durumundan çıkıp tekrar başlayın.');
+      if (!active) _crmTimer?.cancel();
+    } catch (_) {
+      if (mounted) setState(() => _crmStatus = 'CRM’e ulaşılamadı. Otomatik yeniden denenecek.');
+    } finally { _crmBusy = false; }
+  }
+
   Future<void> _stop() async {
     setState(() => _busy = true);
     try {
+      _crmTimer?.cancel();
+      try { await TempoCrmQueue.instance.cancel(); } catch (_) {}
       await bind.mainSetOption(key: 'stop-service', value: 'Y');
       if (mounted) setState(() => _ready = false);
     } catch (e) {
@@ -103,6 +137,8 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
   @override
   void dispose() {
     _idTimer?.cancel();
+    _crmTimer?.cancel();
+    _topic.dispose();
     _taxId.dispose();
     _person.dispose();
     super.dispose();
@@ -198,6 +234,8 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
                               if (!_ready && !_busy) _start();
                             }),
                         const SizedBox(height: 8),
+                        TextField(controller: _topic, enabled: !_ready && !_busy, maxLength: 1000, decoration: const InputDecoration(labelText: 'Destek konusu (isteğe bağlı)', border: OutlineInputBorder())),
+                        if (_crmStatus.isNotEmpty) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(_crmStatus)),
                         const Text(
                             'Bilgiler bu cihazda hatırlanır ve destek operatörüne iletilir.',
                             style: TextStyle(
@@ -218,7 +256,7 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
                               icon: const Icon(Icons.support_agent),
                               label: Text(_busy
                                   ? 'Hazırlanıyor…'
-                                  : 'Desteğe Hazır Ol')),
+                                  : 'Destek iste')),
                         if (_ready)
                           AnimatedBuilder(
                               animation: gFFI.serverModel,
@@ -259,7 +297,7 @@ class _TempoCustomerPageState extends State<TempoCustomerPage>
                               onPressed: () => showAboutDialog(
                                       context: context,
                                       applicationName: 'TempoDestek',
-                                      applicationVersion: 'Test 0.10',
+                                      applicationVersion: 'Test 0.11 • CRM',
                                       children: [
                                         const Text(
                                             'RustDesk altyapısı · AGPL-3.0\nKaynak: github.com/emredelibalta/rustdesk')

@@ -8,6 +8,7 @@ import '../../models/model.dart';
 import '../../models/terminal_model.dart';
 import '../../models/terminal_mouse_handler.dart';
 import 'catalog.dart';
+import 'bulk_catalog.dart';
 import 'download_progress.dart';
 import 'tools_catalog.dart';
 import 'tools_dialog.dart';
@@ -41,6 +42,7 @@ class _LibraryDialogState extends State<_LibraryDialog> {
   List<TempoPackage> _records = [];
   final _selected = <String>{};
   String _version = 'Tümü', _product = 'Tümü', _query = '', _error = '';
+  String _notice = '';
   bool _loading = true;
   File get _file {
     final root = Platform.environment['LOCALAPPDATA'];
@@ -115,6 +117,133 @@ class _LibraryDialogState extends State<_LibraryDialog> {
         _selected.clear();
         _error = '';
       });
+  }
+
+  Future<void> _bulkAdd() async {
+    final version = TextEditingController(
+        text: _version == 'Tümü' ? '08b' : _version.split(' / ').last);
+    var product = _product == 'Tümü' ? 'Fly' : _product;
+    final files = TextEditingController(
+        text: tempoInstallerNames(_records, product).join('\n'));
+    var error = '';
+    try {
+      final draft = await showDialog<List<TempoPackage>>(
+          context: context,
+          builder: (c) => StatefulBuilder(
+              builder: (c, update) => AlertDialog(
+                    title:
+                        const Text('Sürüm paketlerini toplu ekle / güncelle'),
+                    content: SizedBox(
+                        width: 680,
+                        child: SingleChildScrollView(
+                            child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                              DropdownButtonFormField<String>(
+                                  value: product,
+                                  decoration:
+                                      const InputDecoration(labelText: 'Ürün'),
+                                  items: ['Fly', 'Jump', 'Run', 'Müşavir']
+                                      .map((p) => DropdownMenuItem(
+                                          value: p, child: Text(p)))
+                                      .toList(),
+                                  onChanged: (v) => update(() {
+                                        product = v!;
+                                        files.text = tempoInstallerNames(
+                                                _records, product)
+                                            .join('\n');
+                                      })),
+                              const SizedBox(height: 14),
+                              TextField(
+                                  controller: version,
+                                  decoration: const InputDecoration(
+                                      labelText: 'Güncelleme sürümü (ör. 08b)',
+                                      border: OutlineInputBorder()),
+                                  onChanged: (_) => update(() {})),
+                              const SizedBox(height: 14),
+                              Text(
+                                  'Sabit adres: https://cdn-mikro.atros.com.tr/mikro/v17/${version.text.trim()}/'),
+                              const SizedBox(height: 14),
+                              TextField(
+                                  controller: files,
+                                  minLines: 4,
+                                  maxLines: 7,
+                                  decoration: const InputDecoration(
+                                      labelText:
+                                          'Kurulum dosya adları — her satır bir paket',
+                                      border: OutlineInputBorder())),
+                              const SizedBox(height: 12),
+                              const Text(
+                                  'Tam bağlantılar otomatik oluşturulur. Dosya adları kayıtlı paketlerden veya öneri şablonundan gelir; ilk kullanımda gerekirse düzeltin. Bulunmayan bağlantı kaydedilmez. Aynı ürün/sürüm/paket varsa güncellenir; diğer sürümler korunur.'),
+                              if (error.isNotEmpty)
+                                Text(error,
+                                    style: const TextStyle(color: Colors.red)),
+                            ]))),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(c),
+                          child: const Text('Vazgeç')),
+                      FilledButton(
+                          onPressed: () {
+                            try {
+                              Navigator.pop(
+                                  c,
+                                  tempoBulkPackages(
+                                      _records,
+                                      product,
+                                      version.text,
+                                      const LineSplitter()
+                                          .convert(files.text)));
+                            } catch (e) {
+                              update(() => error = '$e');
+                            }
+                          },
+                          child:
+                              const Text('Bağlantıları denetle ve toplu ekle'))
+                    ],
+                  )));
+      if (draft == null || !mounted) return;
+      setState(() {
+        _loading = true;
+        _error = '';
+        _notice = 'Bağlantılar denetleniyor…';
+      });
+      final valid = <TempoPackage>[], errors = <String>[];
+      for (final package in draft) {
+        if (!mounted) return;
+        setState(() => _notice =
+            'Denetleniyor: ${Uri.parse(package.url).pathSegments.last}');
+        final problem = await checkTempoInstallerLink(package.url);
+        if (problem == null) {
+          valid.add(package);
+        } else {
+          errors.add('${package.package}: $problem');
+        }
+      }
+      if (!mounted) return;
+      if (valid.isNotEmpty) {
+        final keys = valid.map((p) => p.key).toSet();
+        await _save(
+            [..._records.where((p) => !keys.contains(p.key)), ...valid]);
+      }
+      if (mounted)
+        setState(() {
+          _product = product;
+          _version = 'V17 / ${version.text.trim().toLowerCase()}';
+          if (!_records.any((p) => '${p.major} / ${p.version}' == _version))
+            _version = 'Tümü';
+          _notice = '${valid.length} paket eklendi/güncellendi.';
+          _error = errors.join('\n');
+        });
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      version.dispose();
+      files.dispose();
+    }
   }
 
   Future<void> _edit([TempoPackage? old]) async {
@@ -421,11 +550,17 @@ class _LibraryDialogState extends State<_LibraryDialog> {
                               _selected.clear();
                             })),
                     TextButton(
-                        onPressed: _loading ? null : () => _edit(),
-                        child: const Text('Paket ekle')),
-                    TextButton(onPressed: _load, child: const Text('Yenile')),
+                        onPressed: _loading ? null : _bulkAdd,
+                        child: const Text('Toplu paket ekle')),
                     TextButton(
-                        onPressed: _import, child: const Text('İçe aktar')),
+                        onPressed: _loading ? null : () => _edit(),
+                        child: const Text('Tek paket')),
+                    TextButton(
+                        onPressed: _loading ? null : _load,
+                        child: const Text('Yenile')),
+                    TextButton(
+                        onPressed: _loading ? null : _import,
+                        child: const Text('İçe aktar')),
                     TextButton(
                         onPressed: _export, child: const Text('Dışa aktar'))
                   ]),
@@ -436,6 +571,7 @@ class _LibraryDialogState extends State<_LibraryDialog> {
                         _query = v;
                         _selected.clear();
                       })),
+              if (_notice.isNotEmpty) Text(_notice),
               if (_error.isNotEmpty)
                 Text(_error, style: const TextStyle(color: Colors.red)),
               Expanded(

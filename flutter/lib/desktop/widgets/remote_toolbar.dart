@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
+import '../tempo/library_button_stub.dart'
+    if (dart.library.io) '../tempo/library_button.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -851,6 +853,9 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
       toolbarItems.add(_VoiceCallMenu(id: widget.id, ffi: widget.ffi));
     }
     if (!isWeb) toolbarItems.add(_RecordMenu());
+    toolbarItems.add(TempoLibraryButton(
+      peerId: widget.id, platform: pi.platform,
+    ));
     toolbarItems.add(_CloseMenu(id: widget.id, ffi: widget.ffi));
     final toolbarBorderRadius = BorderRadius.all(Radius.circular(4.0));
     // innerAxis: how the toolbar icons themselves flow.

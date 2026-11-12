@@ -184,7 +184,9 @@ jobs:
       shell: powershell
       run: 'python -m pip install -r libs/portable/requirements.txt
 
-        python libs/portable/generate.py -f rustdesk -o libs/portable -e rustdesk.exe
+        Rename-Item rustdesk/rustdesk.exe TempoDestek.exe
+
+        python libs/portable/generate.py -f rustdesk -o libs/portable -e TempoDestek.exe
 
         if ($LASTEXITCODE -ne 0) { throw "Portable packaging failed" }
 
